@@ -7,6 +7,7 @@ This project focuses on the historical atmospheric carbon dioxide concentrations
 
 ## Files here
 
+* 'README.md': Provides context to project and a link to the webpage.
 * `index.html`: The live webpage hosted using Github Pages.
 * `CO2_Analysis_Report.Rmd`: The R Markdown file containing all code and commentary.
 * `CO2_Analysis.Rproj`: The R Project file.
