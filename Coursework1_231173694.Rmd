@@ -1,0 +1,185 @@
+---
+title: "MTH6139 Time Series"
+subtitle: "Coursework 1 -- Time Series Analysis and Forecasting of Atmospheric CO2 Concentrations Using Prophet"
+author: "Leonardo Taylor"
+date: "Spring term 2025"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: spacelab
+    highlight: tango
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+---
+```{r, echo=FALSE}
+# This code will display the QMUL logo at the top right of the page
+# Do not change this code
+htmltools::img(src = knitr::image_uri("images/QMlogo.png"),
+               alt = 'logo',
+               style = 'position:absolute; top:0; right:0; padding:10px; width:20%;')
+```
+
+---
+
+### Introduction
+
+The 'co2' dataset represents atmospheric CO2 concentration, obtained at the Mauna Loa Observatary in Hawaii. Atmospheric concentrations of CO2 are expressed in parts per million (ppm) and reported in the preliminary 1997 SIO manometric mole fraction scale. There are monthly observations from 1959 to 1997 - 468 in total. Linear interpolation between January and May 1964 was used to create values for February, March and April of 1964 where the values were missing.
+
+The aim of this project is to analyse historical CO2 levels and forecast future concentrations as well as investigate seasonality using the Prophet model.
+
+---
+
+### Analysis of Historical Data
+
+The initial raw 'co2' data shows a positive trend where CO2 concentration (ppm) increases with time. There is a clear jaggedness to the line, indicating seasonality within the data.
+
+```{r}
+plot(co2, 
+     main = "Historical CO2 Levels (1959-1997)",
+     ylab = "CO2 Concentration (ppm)",
+     xlab = "Year",
+     xlim = c(1957,2000),
+     ylim = c(310,370),
+     lwd = 1.5,
+     col = "blue")
+```
+
+The summary of the linear model fitted to 'co2' below gives an estimated coefficient for time(co2) of approximately 1.30. This means that atmospheric CO2 concentrations grew by an average of 1.30 parts per million (ppm) each year between 1959 and 1997. The p-value being very small indicates this result is strongly statistically significant.
+
+```{r}
+CarbonLinearModel <- lm(co2 ~ time(co2))
+summary(CarbonLinearModel)
+```
+
+---
+
+### Variance and Heteroskedasticity
+
+The Breusch-Pagan test would give a p-value of 0.05696, which is above the 5% significance level, and the graph below shows the variance looks stable as the residual spread is reasonably constant over time. This means the data can be used without applying a log transformation.
+
+```{r}
+ModelResiduals <- resid(CarbonLinearModel)
+
+plot(time(co2), ModelResiduals,
+     main = "Residual Analysis for Heteroskedasticity",
+     ylab = "Residuals (ppm)",
+     xlab = "Year",
+     col = "skyblue"
+     )
+abline(h = 0, col = "darkblue", lwd = 2, lty = 2)
+```
+
+The linear model ignored the seasonality of the data and would not adjust for its acceleration when forecasting, so Meta's Prophet forecasting system is used instead for better accuracy from this point on to solve these issues.
+
+---
+
+### Preparing the Data for Prophet
+
+Before further analysis occurs, the 'co2' time-series object is converted into a dataframe to meet the required format of the Prophet algorithm - 'ds' is the dates (converted from fractional years into a YYYY-MM-DD format) and 'y' is the numeric CO2 values.
+
+```{r}
+
+library(prophet)
+
+library(zoo)
+
+CarbonData <- data.frame(
+    ds = as.Date(as.yearmon(time(co2))),
+    y = as.numeric(co2)
+    )
+
+CarbonModel <- prophet(CarbonData)
+```
+
+---
+
+### Forecasting and Seasonality Analysis
+
+The model forecasts future CO2 concentrations 10 years into the future. To allow the addition of labels and a title on some of the upcoming graphs, the library 'ggplot2' is used, the components are put into a list so they can be individually displayed later, and the components are set to not display now.
+
+```{r}
+Future10Years <- make_future_dataframe(CarbonModel, 120, freq = "month")
+CarbonPrediction <- predict(CarbonModel, Future10Years)
+
+library(ggplot2)
+GraphList <-prophet_plot_components(CarbonModel, CarbonPrediction, render_plot = FALSE)
+```
+
+The forecast is visualised below. The prediction shows that CO2 is expected to continue to increase with time. The jaggedness implies there is seasonality to the data. The shaded area represents the confidence interval and widens as the prediction moves further away from the known data. This means there is less certainty in the prediction as time increases, so the model is better for short term predictions.
+
+```{r}
+plot(CarbonModel, CarbonPrediction,
+     xlabel = "Year",
+     ylabel = "CO2 Concentration (ppm)"
+     ) + 
+    labs(title = "CO2 Concentration Forecasted 10 Years Beyond The Data")
+
+```
+
+To be more specific about the uncertainty, the yhat values are the specific estimates the model makes about what CO2 concentration will be at the dates in the ds column, while the yhat_lower and yhat_upper values are bounds to the confidence interval. At the tail end of the prediction, the confidence interval is approximately yhat+-10.
+
+```{r}
+tail(CarbonPrediction[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+```
+To demonstrate why the model is not useful for long term predictions, an 50 year prediction creates a large cone shape where the confidence interval is around 250 ppm wide. It can be said with confidence that this is not particularly  useful to someone trying to predict the exact CO2 concentration in 50 years time. In 50 years, a lot can change in the world, hence the confidence intervals is wide. For example, complete abandonment of Net Zero related goals would likely increase CO2 concentration further, but this is not sure to happen, so the confidence interval is wide to account for unforeseen changes that would impact the trend. It also accounts for seasonal noise.
+
+```{r}
+Future50Years <- make_future_dataframe(CarbonModel, 600, freq = "month")
+Carbon50Prediction <- predict(CarbonModel, Future50Years)
+plot(CarbonModel, Carbon50Prediction,
+     xlabel = "Year",
+     ylabel = "CO2 Concentration (ppm)"
+     ) +
+    labs(title = "CO2 Concentration Forecasted 50 Years Beyond The Data")
+```
+
+Going back to the 10 year prediction, this graph displays the forecasted trend line, showing an acceleration in CO2 increasing as time increases. Again, the confidence interval widens with time, so the forecast is more useful short term.
+
+```{r}
+GraphList[[1]] + 
+  labs(
+    title = "CO2 Concentration Trend Forecasted 10 Years Beyond The Data",
+    x = "Year",
+    y = "CO2 Trend (ppm)"
+  )
+```
+
+This graph has a trend line that confirms that the annual increase in CO2 emissions is accelerating. This conclusion is consistent with other studies on CO2 emissions.
+
+```{r}
+co2_change <- diff(co2, lag = 12)
+plot(co2_change,
+main = "Annual Increase in CO2 Concentration (ppm)",
+ylab = "Annual Change in CO2 Concentration (ppm)",
+xlab = "Year",
+col = "skyblue",
+lwd = 1.5)
+abline(lm(co2_change ~ time(co2_change)), col = "darkblue", lwd = 2, lty = 2)
+```
+
+The third graph shows the seasonality of the 'co2' data - there is an annual cycle where CO2 levels peak in late spring and are lowest in early autumn. According to [NASA](https://science.nasa.gov/earth/explore/earth-indicators/carbon-dioxide/){target="_blank"}, this is because of 'seasonal cycles in photosynthesis', where 'in Northern Hemisphere spring' plant growth 'begins the process of lowering the amount of CO2 in the atmosphere' and 'in northern autumn, plant growth stops or slows down' causing the release of CO2 back to the atmosphere.
+
+```{r}
+GraphList[[2]] + 
+  labs(
+    title = "Yearly Seasonal Fluctuations",
+    x = "Month",
+    y = "Seasonal Effect (ppm)"
+  ) +
+    scale_x_datetime(date_breaks = "1 month", date_labels = "%b")
+```
+
+---
+
+### Conclusion
+
+This project successfully analyzed historical atmospheric CO2 concentrations from the Mauna Loa Observatory, determining, between 1959 and 1997, CO2 concentration increased at a statistically significant average rate of 1.3 ppm per year.
+
+This project also successfully used Meta's Prophet to predict future CO2 concentration and found seasonality in the data, caused by photosynthesis seasonal changes. Due to widening confidence intervals in the forecasts, the forecasts were deemed more useful for short term predictions.
